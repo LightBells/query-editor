@@ -34,6 +34,21 @@ export class SchemaCache {
     }
   }
 
+  // fill in a dataset's tables (lazy load when a dataset node is expanded)
+  mergeTables(dataset: string, tables: TableInfo[]) {
+    const ds = this.datasets.find((d) => d.id === dataset);
+    if (ds) ds.tables = tables;
+    for (const t of tables) {
+      const existing = this.tables.get(t.id);
+      this.tables.set(t.id, {
+        dataset,
+        name: t.id,
+        rowCount: t.row_count,
+        columns: existing?.columns,
+      });
+    }
+  }
+
   setColumns(table: string, columns: ColumnDef[]) {
     const t = this.tables.get(table);
     if (t) t.columns = columns;

@@ -8,9 +8,12 @@ interface Props {
   loading: boolean;
   onInsert: (text: string) => void;
   onLoadColumns: (table: string) => void;   // lazy column fetch on expand
+  onLoadTables: (dataset: string) => void;  // lazy table fetch on dataset expand
 }
 
-export function SchemaTree({ cache, version, source, loading, onInsert, onLoadColumns }: Props) {
+export function SchemaTree(
+  { cache, version, source, loading, onInsert, onLoadColumns, onLoadTables }: Props,
+) {
   const [openDs, setOpenDs] = useState<Set<string>>(new Set());
   const [openTbl, setOpenTbl] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -52,12 +55,18 @@ export function SchemaTree({ cache, version, source, loading, onInsert, onLoadCo
           <div key={ds.id}>
             <button
               className="flex w-full items-center gap-1 rounded px-2 py-1 text-left hover:bg-panel"
-              onClick={() => toggle(openDs, ds.id, setOpenDs)}
+              onClick={() => {
+                if (!openDs.has(ds.id)) onLoadTables(ds.id); // fetch tables on first open
+                toggle(openDs, ds.id, setOpenDs);
+              }}
             >
               <span className="text-xs">{openDs.has(ds.id) ? "▾" : "▸"}</span>
               <span>📁</span>
               <span className="text-slate-200">{ds.id}</span>
             </button>
+            {openDs.has(ds.id) && ds.tables.length === 0 && (
+              <div className="ml-6 px-2 py-0.5 text-[10px] text-slate-500">loading…</div>
+            )}
             {openDs.has(ds.id) &&
               ds.tables.filter((t) => match(t.id)).map((t) => {
                 const cols = cache.getColumns(t.id);

@@ -217,7 +217,7 @@ sub-query keeps its fanout-safety.
 
 ```bash
 pip install pytest
-pytest -q          # 65 passed
+pytest -q          # 68 passed
 ```
 
 * `tests/test_monasql.py` — engine + sub-query composition (feature 1)

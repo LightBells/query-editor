@@ -4,6 +4,7 @@ import type {
   CompileResponse,
   ExecuteResponse,
   SchemaResponse,
+  TableInfo,
   TableSchemaResponse,
 } from "../types";
 
@@ -35,6 +36,14 @@ export const api = {
     if (dataset) p.set("dataset", dataset);
     if (demo) p.set("demo", "true");
     return jsonFetch<SchemaResponse>(`/api/schema?${p.toString()}`);
+  },
+
+  getTables(dataset: string, projectId?: string | null, demo = true): Promise<TableInfo[]> {
+    const p = new URLSearchParams();
+    p.set("dataset", dataset);
+    if (projectId) p.set("project_id", projectId);
+    if (demo) p.set("demo", "true");
+    return jsonFetch<TableInfo[]>(`/api/tables?${p.toString()}`);
   },
 
   getTableColumns(

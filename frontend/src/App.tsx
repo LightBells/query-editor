@@ -144,6 +144,7 @@ export default function App() {
             loading={schema.loading}
             onInsert={(t) => editorApi.current?.insertText(t)}
             onLoadColumns={schema.ensureColumns}
+            onLoadTables={schema.ensureTables}
           />
         </aside>
 

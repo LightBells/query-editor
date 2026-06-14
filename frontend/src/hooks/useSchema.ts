@@ -7,7 +7,8 @@ import { SchemaCache } from "../lib/schemaCache";
 // in the schema tree — so we never query every table up front.
 export function useSchema(projectId: string | null, dataset: string | null) {
   const cacheRef = useRef(new SchemaCache());
-  const requested = useRef(new Set<string>());
+  const requested = useRef(new Set<string>());          // columns fetched
+  const requestedDatasets = useRef(new Set<string>());  // dataset tables fetched
   const [version, setVersion] = useState(0);
   const [source, setSource] = useState<string>("demo");
   const [loading, setLoading] = useState(true);
@@ -18,6 +19,8 @@ export function useSchema(projectId: string | null, dataset: string | null) {
     setError(null);
     cacheRef.current.clear();
     requested.current.clear();
+    requestedDatasets.current.clear();
+    if (dataset) requestedDatasets.current.add(dataset); // selected dataset loaded eagerly
     try {
       const schema = await api.getSchema(projectId, !projectId, dataset);
       cacheRef.current.setDatasets(schema.datasets);
@@ -52,5 +55,24 @@ export function useSchema(projectId: string | null, dataset: string | null) {
     [projectId],
   );
 
-  return { cache: cacheRef.current, version, source, loading, error, reload, ensureColumns };
+  // fetch one dataset's tables on demand (when its tree node is expanded)
+  const ensureTables = useCallback(
+    (dataset: string) => {
+      if (requestedDatasets.current.has(dataset)) return;
+      requestedDatasets.current.add(dataset);
+      api
+        .getTables(dataset, projectId, !projectId)
+        .then((tables) => {
+          cacheRef.current.mergeTables(dataset, tables);
+          setVersion((v) => v + 1);
+        })
+        .catch(() => requestedDatasets.current.delete(dataset));
+    },
+    [projectId],
+  );
+
+  return {
+    cache: cacheRef.current, version, source, loading, error,
+    reload, ensureColumns, ensureTables,
+  };
 }

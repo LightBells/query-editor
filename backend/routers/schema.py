@@ -1,4 +1,10 @@
-"""GET /api/schema — datasets / tables / columns from BigQuery (or demo)."""
+"""GET /api/schema — datasets / tables / columns from BigQuery (or demo).
+
+Everything is lazy so huge projects don't hang:
+  * GET /api/schema      → dataset *names* (+ tables for the selected dataset)
+  * GET /api/tables      → tables for one dataset (on tree-expand)
+  * GET /api/schema/{ds}/{t} → columns for one table (on tree-expand / reference)
+"""
 from __future__ import annotations
 
 from typing import Optional
@@ -16,11 +22,11 @@ from ..services.schema_service import (
 router = APIRouter()
 
 
-def _datasets(svc) -> list[DatasetInfo]:
+def _demo_datasets() -> list[DatasetInfo]:
+    svc = DemoSchemaService()
     out = []
     for ds in svc.get_datasets():
-        tables = ds.get("tables") or svc.get_tables(ds["id"])
-        out.append(DatasetInfo(id=ds["id"], tables=[TableInfo(**t) for t in tables]))
+        out.append(DatasetInfo(id=ds["id"], tables=[TableInfo(**t) for t in ds["tables"]]))
     return out
 
 
@@ -28,44 +34,46 @@ def _datasets(svc) -> list[DatasetInfo]:
 def get_schema(project_id: Optional[str] = Query(default=None),
                dataset: Optional[str] = Query(default=None),
                demo: bool = Query(default=False)) -> SchemaResponse:
-    # Demo path (no project, or explicitly requested).
     if demo or not project_id:
-        svc = DemoSchemaService()
-        return SchemaResponse(datasets=_datasets(svc), source="demo")
+        return SchemaResponse(datasets=_demo_datasets(), source="demo")
 
-    # Real BigQuery.
+    # one cheap SCHEMATA query for dataset *names*; tables are loaded lazily.
     try:
         svc = BigQuerySchemaService(project_id)
-    except Exception as e:  # SDK missing / no creds → demo, but say why
+        ds_names = [d["id"] for d in svc.get_datasets()]
+    except Exception as e:
         return SchemaResponse(
-            datasets=_datasets(DemoSchemaService()), source="demo",
+            datasets=_demo_datasets(), source="demo",
             error=f"Could not connect to BigQuery for '{project_id}', showing demo data: {e}",
         )
 
-    try:
-        if dataset:
+    error: Optional[str] = None
+    out: list[DatasetInfo] = []
+    for name in ds_names:
+        tables: list[TableInfo] = []
+        if name == dataset:                      # eagerly load only the selected one
             try:
-                tables = svc.get_tables(dataset)
+                tables = [TableInfo(**t) for t in svc.get_tables(name)]
             except Exception as e:
-                # dataset missing/inaccessible → still connected; list the
-                # available dataset names so the user can pick the right one.
-                available = [d["id"] for d in svc.get_datasets()]
-                return SchemaResponse(
-                    datasets=[DatasetInfo(id=d, tables=[]) for d in available],
-                    source="bigquery",
-                    error=(f"Dataset '{dataset}' not found in '{project_id}'. "
-                           f"Available: {', '.join(available) or '(none)'} — {e}"),
-                )
-            return SchemaResponse(
-                datasets=[DatasetInfo(id=dataset, tables=[TableInfo(**t) for t in tables])],
-                source="bigquery",
-            )
-        return SchemaResponse(datasets=_datasets(svc), source="bigquery")
-    except Exception as e:  # API disabled, permissions, etc.
-        return SchemaResponse(
-            datasets=_datasets(DemoSchemaService()), source="demo",
-            error=f"Could not reach BigQuery for '{project_id}', showing demo data: {e}",
-        )
+                error = f"Could not list tables in '{dataset}': {e}"
+        out.append(DatasetInfo(id=name, tables=tables))
+
+    if dataset and dataset not in ds_names:
+        error = (f"Dataset '{dataset}' not found in '{project_id}'. "
+                 f"Available: {', '.join(ds_names) or '(none)'}")
+    return SchemaResponse(datasets=out, source="bigquery", error=error)
+
+
+@router.get("/tables", response_model=list[TableInfo])
+def get_tables(dataset: str = Query(...),
+               project_id: Optional[str] = Query(default=None),
+               demo: bool = Query(default=False)) -> list[TableInfo]:
+    """Tables for a single dataset — called when a dataset node is expanded."""
+    svc = get_schema_service(project_id, force_demo=demo)
+    try:
+        return [TableInfo(**t) for t in svc.get_tables(dataset)]
+    except Exception:
+        return []
 
 
 @router.get("/schema/{dataset}/{table}", response_model=TableSchemaResponse)
@@ -73,7 +81,10 @@ def get_table_schema(dataset: str, table: str,
                      project_id: Optional[str] = Query(default=None),
                      demo: bool = Query(default=False)) -> TableSchemaResponse:
     svc = get_schema_service(project_id, force_demo=demo)
-    cols = svc.get_columns(dataset, table)
+    try:
+        cols = svc.get_columns(dataset, table)
+    except Exception:
+        cols = []
     return TableSchemaResponse(
         dataset=dataset, table=table,
         columns=[ColumnDef(**c) for c in cols],

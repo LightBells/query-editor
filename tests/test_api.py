@@ -56,12 +56,27 @@ def test_compile_with_inline_tables():
     assert body["main"] == "dashboard"
 
 
-def test_compile_fetches_demo_schema():
-    # no `tables`, but dataset given → backend pulls the demo schema
+def test_compile_is_pure_cpu_without_tables():
+    # compile never calls BigQuery: with no `tables` it still compiles fine
+    # (unknown tables only warn) — this is what keeps the WS loop from hanging.
     r = client.post("/api/compile", json={"dsl": DSL, "dataset": "analytics"})
     body = r.json()
     assert body["errors"] == []
     assert "_agg_os" in body["sql"]
+
+
+def test_tables_endpoint_demo():
+    r = client.get("/api/tables", params={"dataset": "analytics", "demo": True})
+    assert r.status_code == 200
+    names = {t["id"] for t in r.json()}
+    assert {"users", "orders"} <= names
+
+
+def test_schema_lazy_lists_dataset_names():
+    # demo returns datasets with tables; the contract is dataset names are present
+    r = client.get("/api/schema", params={"demo": True})
+    body = r.json()
+    assert any(d["id"] == "analytics" for d in body["datasets"])
 
 
 def test_compile_reports_errors():
@@ -98,6 +113,22 @@ def test_websocket_realtime_compile():
         assert msg["type"] == "result"
         assert msg["errors"] == []
         assert "SELECT u.id, u.name" in msg["sql"]
+
+
+def test_websocket_no_hang_without_tables():
+    # Regression: previously, a compile with a project but no cached `tables`
+    # made the WS handler enumerate the whole dataset's columns from BigQuery,
+    # blocking the event loop. Compile is now pure CPU and returns immediately.
+    with client.websocket_connect("/api/ws") as ws:
+        ws.send_json({
+            "type": "compile",
+            "dsl": "QUERY q:\n u = from(users)\n select(u.id)",
+            "project_id": "some-project",
+            "dataset": "some_dataset",
+        })
+        msg = ws.receive_json()
+        assert msg["type"] == "result"
+        assert "SELECT u.id" in (msg["sql"] or "")
 
 
 def test_websocket_reports_errors():

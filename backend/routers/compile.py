@@ -5,25 +5,21 @@ from fastapi import APIRouter
 
 from ..models.schemas import CompileRequest, CompileResponse
 from ..parser import compile_dsl
-from ..services.schema_service import get_schema_service
 
 router = APIRouter()
 
 
 def run_compile(req: CompileRequest) -> CompileResponse:
-    """Shared by the REST endpoint and the WebSocket realtime compiler."""
-    tables = dict(req.tables)
-    # If the editor didn't send a cached schema, fetch one (demo or BigQuery).
-    if not tables and (req.project_id or req.dataset):
-        svc = get_schema_service(req.project_id)
-        try:
-            tables = svc.table_column_map(req.dataset)
-        except Exception:
-            tables = {}
+    """Shared by the REST endpoint and the WebSocket realtime compiler.
 
+    This is **pure CPU** — it never calls BigQuery.  The editor supplies the
+    schema via ``req.tables`` (table → column names); unknown tables just produce
+    a warning.  (Enumerating a whole dataset's columns here previously blocked
+    the WebSocket event loop on large projects.)
+    """
     result = compile_dsl(
         req.dsl,
-        schema_tables=tables,
+        schema_tables=dict(req.tables),
         dialect=req.dialect,
         target=req.target,
     )
