@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+*.local
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Credentials — never commit
+*.json.key
+credentials.json
+service-account*.json

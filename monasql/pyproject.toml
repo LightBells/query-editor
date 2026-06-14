@@ -1,0 +1,7 @@
+[project]
+name = "sql-monadic"
+version = "0.1.0"
+description = "monasql — a monadic SQL DSL with sub-query composition, fanout-safe lateral aggregation, and a BigQuery LATERAL→CTE rewrite."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []

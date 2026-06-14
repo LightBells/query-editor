@@ -1,0 +1,30 @@
+# Dev stack: FastAPI backend + Vite frontend.
+#   docker compose up --build
+# Optional BigQuery: set GCP_PROJECT_ID and point GOOGLE_APPLICATION_CREDENTIALS
+# at a service-account key (mounted read-only below).
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./monasql:/app/monasql
+      - ./backend:/app/backend
+      - ${GOOGLE_APPLICATION_CREDENTIALS:-/dev/null}:/app/credentials.json:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - CORS_ORIGINS=http://localhost:5173
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend

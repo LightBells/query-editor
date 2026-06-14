@@ -1,0 +1,10 @@
+# Web IDE backend
+fastapi>=0.110
+uvicorn[standard]>=0.27
+pydantic>=2.6
+httpx>=0.27            # for fastapi.testclient
+
+# BigQuery execution & schema (optional at runtime — compile works without it)
+google-cloud-bigquery>=3.17
+
+# Note: the DSL parser is hand-written (no lark dependency required).
