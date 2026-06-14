@@ -7,9 +7,10 @@ interface Props {
   source: string;
   loading: boolean;
   onInsert: (text: string) => void;
+  onLoadColumns: (table: string) => void;   // lazy column fetch on expand
 }
 
-export function SchemaTree({ cache, version, source, loading, onInsert }: Props) {
+export function SchemaTree({ cache, version, source, loading, onInsert, onLoadColumns }: Props) {
   const [openDs, setOpenDs] = useState<Set<string>>(new Set());
   const [openTbl, setOpenTbl] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -70,7 +71,10 @@ export function SchemaTree({ cache, version, source, loading, onInsert }: Props)
                     >
                       <button
                         className="text-xs"
-                        onClick={() => toggle(openTbl, t.id, setOpenTbl)}
+                        onClick={() => {
+                          if (!open) onLoadColumns(t.id);   // fetch columns on first open
+                          toggle(openTbl, t.id, setOpenTbl);
+                        }}
                       >
                         {open ? "▾" : "▸"}
                       </button>
@@ -88,6 +92,9 @@ export function SchemaTree({ cache, version, source, loading, onInsert }: Props)
                         </span>
                       )}
                     </div>
+                    {open && !cache.hasColumns(t.id) && (
+                      <div className="ml-7 px-2 py-0.5 text-[10px] text-slate-500">loading…</div>
+                    )}
                     {open &&
                       cols.map((c) => (
                         <div

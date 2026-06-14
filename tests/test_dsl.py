@@ -296,6 +296,56 @@ def test_apply_tvf():
 
 # ── error reporting ───────────────────────────────────────────
 
+def test_from_twice_is_clear_error():
+    r = compile_dsl("QUERY q:\n u = from(users)\n i = from(orders)\n select(u.id)",
+                    schema_tables=SCHEMA)
+    assert r.errors
+    assert "from() can only appear once" in r.errors[0]["message"]
+
+
+def test_join_two_sources_is_clear_error():
+    dsl = ("QUERY q:\n u = from(users)\n"
+           " x = join(orders, comments, on = u.id == orders.user_id)\n select(u.id)")
+    r = compile_dsl(dsl, schema_tables=SCHEMA)
+    assert r.errors
+    assert "join() takes exactly one" in r.errors[0]["message"]
+
+
+def test_join_bound_ref_is_clear_error():
+    dsl = ("QUERY q:\n u = from(users)\n o = join(orders, on = o.user_id == u.id)\n"
+           " x = join(u, on = u.id == o.id)\n select(u.id)")
+    r = compile_dsl(dsl, schema_tables=SCHEMA)
+    assert r.errors
+    assert "already a table" in r.errors[0]["message"]
+
+
+def test_predicate_param_named_date():
+    full = ("PREDICATE this_year(date):\n  date > '2026-01-01'\n\n"
+            "QUERY q:\n o = from(orders)\n where(this_year(o.created_at))\n select(o.id)")
+    assert "o.created_at > '2026-01-01'" in sql_of(full)
+
+
+def test_join_two_subqueries_pattern():
+    # the idiomatic way to join two composed queries
+    dsl = """
+    QUERY au:
+      u = from(users)
+      select(u.id, u.name)
+
+    QUERY ao:
+      o = from(orders)
+      select(o.id, o.user_id)
+
+    QUERY joined:
+      a = from(au)
+      b = join(ao, on = b.user_id == a.id)
+      select(a.name, b.id)
+    """
+    s = sql_of(dsl)
+    assert "FROM ( SELECT u.id, u.name FROM users u ) a" in s
+    assert "INNER JOIN ( SELECT o.id, o.user_id FROM orders o ) b ON b.user_id = a.id" in s
+
+
 def test_parse_error_has_position():
     r = compile_dsl("QUERY q:\n  u = from(\n  select(1)", schema_tables=SCHEMA)
     assert r.errors

@@ -14,6 +14,11 @@ export class SchemaCache {
   private tables = new Map<string, CachedTable>();
   datasets: DatasetInfo[] = [];
 
+  clear() {
+    this.tables.clear();
+    this.datasets = [];
+  }
+
   setDatasets(datasets: DatasetInfo[]) {
     this.datasets = datasets;
     for (const ds of datasets) {
@@ -39,6 +44,11 @@ export class SchemaCache {
     return this.tables.get(table)?.columns ?? [];
   }
 
+  // columns fetched yet?  (undefined = not loaded; [] = loaded-but-empty)
+  hasColumns(table: string): boolean {
+    return this.tables.get(table)?.columns !== undefined;
+  }
+
   getAllTables(): CachedTable[] {
     return [...this.tables.values()];
   }
@@ -47,11 +57,13 @@ export class SchemaCache {
     return this.tables.get(table);
   }
 
-  // table → column names, for the /api/compile request body
+  // table → column names, for the /api/compile request body.
+  // All known table *names* are included (so the compiler doesn't warn about
+  // "unknown table"); columns are filled in lazily as they're fetched.
   columnMap(): Record<string, string[]> {
     const map: Record<string, string[]> = {};
     for (const t of this.tables.values()) {
-      if (t.columns?.length) map[t.name] = t.columns.map((c) => c.name);
+      map[t.name] = t.columns?.map((c) => c.name) ?? [];
     }
     return map;
   }

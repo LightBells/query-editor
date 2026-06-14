@@ -7,6 +7,7 @@ import { useSchema } from "./hooks/useSchema";
 import { useCompiler } from "./hooks/useCompiler";
 import { useExecute } from "./hooks/useExecute";
 import { setSchemaAccess } from "./lib/monasqlLang";
+import { buildAliasMap } from "./lib/aliasResolver";
 
 const DEFAULT_DSL = `-- monasql DSL — function style: assignment + function calls, no yield/lambda.
 -- Drag tables/columns from the left, or click to insert.
@@ -55,6 +56,12 @@ export default function App() {
       columns: (table) => schema.cache.getColumns(table),
     });
   }, [schema.cache, schema.version]);
+
+  // lazily fetch columns only for tables actually referenced in the editor
+  useEffect(() => {
+    const referenced = new Set(Object.values(buildAliasMap(dsl)));
+    referenced.forEach((t) => schema.ensureColumns(t));
+  }, [dsl, schema.version, schema.ensureColumns]);
 
   // realtime compile on every DSL / schema change.
   // Depend on the *stable* compile fn (not the whole compiler object), so a
@@ -136,6 +143,7 @@ export default function App() {
             source={schema.source}
             loading={schema.loading}
             onInsert={(t) => editorApi.current?.insertText(t)}
+            onLoadColumns={schema.ensureColumns}
           />
         </aside>
 

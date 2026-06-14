@@ -184,19 +184,34 @@ def _err(message: str, line: int, col: int, severity: str = "error") -> dict:
 def _build_query(qdef: A.QueryDef, ctx: Context):
     def gen():
         env: dict[str, Any] = {}
+        qstate = {"has_from": False}
         for stmt in qdef.body:
             if isinstance(stmt, A.Assign):
-                instr = _eval_builder(stmt.value, env, ctx, target=stmt.target)
+                instr = _eval_builder(stmt.value, env, ctx, stmt.target, qstate)
                 ref = yield instr
                 env[stmt.target] = ref
             else:
-                instr = _eval_builder(stmt.value, env, ctx, target=None)
+                instr = _eval_builder(stmt.value, env, ctx, None, qstate)
                 if instr is not None:
                     yield instr
     return query(gen)
 
 
-def _eval_builder(node: A.ExprNode, env: dict, ctx: Context, target: Optional[str]):
+def _source_arg(args: list, env: dict, ctx: Context, node: A.Call):
+    """Resolve a from()/join() source, rejecting an already-bound local ref."""
+    if not args:
+        raise SemanticError("expected a table or query name", node.line, node.col)
+    a0 = args[0]
+    if isinstance(a0, A.Name) and a0.id in env:
+        raise SemanticError(
+            f"'{a0.id}' is already a table in this query — from()/join() need a NEW "
+            f"table or query (to join two, write `x = join(other, on = ...)`)",
+            a0.line, a0.col)
+    return ctx.resolve_source(a0)
+
+
+def _eval_builder(node: A.ExprNode, env: dict, ctx: Context, target: Optional[str],
+                  qstate: dict):
     if not isinstance(node, A.Call) or not isinstance(node.func, A.Name):
         raise SemanticError("expected a query operation like from(...), where(...), select(...)",
                             getattr(node, "line", 0), getattr(node, "col", 0))
@@ -208,17 +223,29 @@ def _eval_builder(node: A.ExprNode, env: dict, ctx: Context, target: Optional[st
     alias = _ident(kw["alias"]) if "alias" in kw else target
 
     if canon == "from_":
-        return from_(ctx.resolve_source(args[0]), alias=alias)
+        if qstate["has_from"]:
+            raise SemanticError(
+                "from() can only appear once per QUERY — use join(...) to add another table",
+                node.line, node.col)
+        qstate["has_from"] = True
+        return from_(_source_arg(args, env, ctx, node), alias=alias)
 
     if canon == "join_":
+        if not qstate["has_from"]:
+            raise SemanticError("join() needs a from(...) before it", node.line, node.col)
+        if len(args) != 1:
+            raise SemanticError(
+                "join() takes exactly one table/query to add to the current FROM. "
+                "To join two sources write `x = join(other, on = ...)`.",
+                node.line, node.col)
         how = _ident(kw["how"]) if "how" in kw else "inner"
-        return join_(ctx.resolve_source(args[0]),
+        return join_(_source_arg(args, env, ctx, node),
                      on=_deferred(kw.get("on"), env, ctx, target),
                      how=how, alias=alias)
 
     if canon == "agg_lateral":
         return agg_lateral(
-            ctx.resolve_source(args[0]),
+            _source_arg(args, env, ctx, node),
             join_on=_deferred(_require(kw, "join_on", node), env, ctx, target),
             aggs=_deferred_list(_require(kw, "aggs", node), env, ctx, target),
             where=_deferred(kw["where"], env, ctx, target) if "where" in kw else None,
@@ -227,7 +254,7 @@ def _eval_builder(node: A.ExprNode, env: dict, ctx: Context, target: Optional[st
 
     if canon == "agg_lateral_grouped":
         return agg_lateral_grouped(
-            ctx.resolve_source(args[0]),
+            _source_arg(args, env, ctx, node),
             join_on=_deferred(_require(kw, "join_on", node), env, ctx, target),
             group_cols=_deferred_list(_require(kw, "group_cols", node), env, ctx, target),
             aggs=_deferred_list(_require(kw, "aggs", node), env, ctx, target),
